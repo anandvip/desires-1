@@ -38,11 +38,38 @@
       margin-bottom: 20px;
       justify-content: center;
     }
+    .user-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .user-details {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .user-img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
     .mic-btn {
       background: #48bb78;
       display: flex;
       align-items: center;
       gap: 8px;
+      cursor: pointer;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    .mic-btn:hover {
+      background: #38a169;
     }
     .mic-btn.recording {
       background: #f56565;
@@ -193,6 +220,8 @@
       background: #4a5568;
       color: white;
       border-radius: 6px;
+      cursor: pointer;
+      border: none;
     }
     .state-btn:hover {
       background: #2d3748;
@@ -285,11 +314,21 @@
       opacity: 1;
       transform: translateY(0);
     }
+    /* ====== [ END OF STYLES ] ====== */
   </style>
 </head>
 <body>
   <div class="container">
     <h1>✨ Desire Tracker</h1>
+
+    <!-- User Info -->
+    <div class="user-info">
+      <div class="user-details">
+        <img id="userImg" class="user-img" src="" alt="Profile Picture">
+        <span id="userName">Welcome!</span>
+      </div>
+      <button id="signOutBtn" class="state-btn">Sign Out</button>
+    </div>
 
     <!-- Google Sign-in Button -->
     <div class="input-methods" style="margin-bottom:30px;">
@@ -298,6 +337,7 @@
       </button>
     </div>
     
+    <!-- Input Methods Buttons -->
     <div class="input-methods">
       <button id="micBtn" class="mic-btn">
         🎤 Start Dictation
@@ -307,17 +347,16 @@
       </button>
     </div>
 
-    <form class="desire-form" id="desireForm">
+    <!-- Desire Form -->
+    <form class="desire-form" id="desireForm" style="display:none;">
       <div class="form-group">
         <label for="desireTitle">What's your desire?</label>
         <input type="text" id="desireTitle" required placeholder="Enter your desire...">
       </div>
-
       <div class="form-group">
         <label for="desireDescription">Description</label>
         <textarea id="desireDescription" placeholder="Describe your desire in detail..."></textarea>
       </div>
-
       <div class="form-group">
         <label for="desirePriority">Priority Level</label>
         <select id="desirePriority">
@@ -326,10 +365,10 @@
           <option value="high">High Priority</option>
         </select>
       </div>
-
       <button type="submit">Add Desire</button>
     </form>
 
+    <!-- Desires List -->
     <div id="desiresList" class="desires-list"></div>
   </div>
 
@@ -338,7 +377,9 @@
     <div class="modal-content">
       <h2>Speech Recognition</h2>
       <p id="recognitionStatus" class="recognition-status">Listening...</p>
-      <div id="recognizedText"></div>
+      <div id="recognizedText" style="margin: 15px 0; min-height: 50px; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px;">
+        <!-- Recognized speech text will appear here -->
+      </div>
       <button id="confirmSpeech">Confirm</button>
       <button id="cancelSpeech">Cancel</button>
     </div>
@@ -349,8 +390,9 @@
 
   <script type="module">
     /* 
-      Firebase initialization and Firestore logic
-      - We'll expose these functions on window so the main script can call them
+      =========================================================
+      ===============   Firebase + Firestore   ================
+      =========================================================
     */
     import { 
       initializeApp 
@@ -360,7 +402,8 @@
       getAuth,
       GoogleAuthProvider,
       signInWithPopup,
-      onAuthStateChanged
+      onAuthStateChanged,
+      signOut
     } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
     import {
@@ -369,7 +412,8 @@
       doc,
       getDoc,
       setDoc,
-      getDocs
+      getDocs,
+      deleteDoc
     } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
     // Firebase config
@@ -384,24 +428,168 @@
 
     // Initialize Firebase
     const app = initializeApp(firebaseConfig);
-
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
     const db = getFirestore();
 
+    /*
+      =========================================================
+      ===============     DOM References      =================
+      =========================================================
+    */
     const googleSignInBtn = document.getElementById('googleSignInBtn');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const userImg = document.getElementById('userImg');
+    const userName = document.getElementById('userName');
     const desiresList = document.getElementById('desiresList');
     const desireForm = document.getElementById('desireForm');
+    const showFormBtn = document.getElementById('showFormBtn');
+    const micBtn = document.getElementById('micBtn');
+    const speechModal = document.getElementById('speechModal');
+    const recognitionStatus = document.getElementById('recognitionStatus');
+    const recognizedText = document.getElementById('recognizedText');
+    const confirmSpeech = document.getElementById('confirmSpeech');
+    const cancelSpeech = document.getElementById('cancelSpeech');
+    const toast = document.getElementById('toast');
 
+    /*
+      =========================================================
+      ===============    Authentication Logic  ================
+      =========================================================
+    */
     googleSignInBtn.addEventListener('click', () => {
       signInWithPopup(auth, provider)
         .then(result => {
           const user = result.user;
           showToast(`Welcome, ${user.displayName}!`);
+          updateUserInfo(user);
         })
         .catch(error => console.error(error.message));
     });
 
+    signOutBtn.addEventListener('click', () => {
+      signOut(auth)
+        .then(() => {
+          userImg.src = '';
+          userName.textContent = 'Welcome!';
+          showToast('Signed out successfully!');
+        })
+        .catch(error => console.error('Sign out error:', error));
+    });
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        updateUserInfo(user);
+      } else {
+        updateUserInfo(null);
+      }
+    });
+
+    function updateUserInfo(user) {
+      if (user) {
+        userImg.src = user.photoURL;
+        userName.textContent = user.displayName;
+      } else {
+        userImg.src = '';
+        userName.textContent = 'Welcome!';
+      }
+    }
+
+    /*
+      =========================================================
+      ===============      Form Visibility     ================
+      =========================================================
+    */
+    showFormBtn.addEventListener('click', () => {
+      // Toggle the form display
+      if (desireForm.style.display === 'none' || desireForm.style.display === '') {
+        desireForm.style.display = 'grid';
+      } else {
+        desireForm.style.display = 'none';
+      }
+    });
+
+    /*
+      =========================================================
+      ===============       Toast Logic        ================
+      =========================================================
+    */
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    /*
+      =========================================================
+      ===============   Speech Recognition     ================
+      =========================================================
+    */
+    let recognition;
+    if ('webkitSpeechRecognition' in window) {
+      recognition = new webkitSpeechRecognition();
+    } else if ('SpeechRecognition' in window) {
+      recognition = new SpeechRecognition();
+    }
+
+    if (recognition) {
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        recognitionStatus.textContent = 'Listening...';
+        micBtn.classList.add('recording');
+      };
+
+      recognition.onend = () => {
+        recognitionStatus.textContent = 'Speech recognition stopped.';
+        micBtn.classList.remove('recording');
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        recognizedText.textContent = transcript.trim();
+      };
+    }
+
+    micBtn.addEventListener('click', () => {
+      openSpeechModal();
+    });
+
+    confirmSpeech.addEventListener('click', () => {
+      const spokenText = recognizedText.textContent.trim();
+      if (spokenText) {
+        // Place recognized text into the "desireTitle" field for convenience
+        document.getElementById('desireTitle').value = spokenText;
+      }
+      closeSpeechModal();
+    });
+
+    cancelSpeech.addEventListener('click', () => {
+      closeSpeechModal();
+    });
+
+    function openSpeechModal() {
+      speechModal.classList.add('active');
+      if (recognition) recognition.start();
+    }
+
+    function closeSpeechModal() {
+      speechModal.classList.remove('active');
+      if (recognition) recognition.stop();
+      recognizedText.textContent = '';
+    }
+
+    /*
+      =========================================================
+      ===============  Firestore: Add Desires   ================
+      =========================================================
+    */
     desireForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -428,40 +616,108 @@
       }
     });
 
+    /*
+      =========================================================
+      =============== Firestore: Fetch Desires  ================
+      =========================================================
+    */
     async function fetchDesires() {
       desiresList.innerHTML = '';
       try {
         const querySnapshot = await getDocs(collection(db, 'desires'));
-        querySnapshot.forEach(doc => {
-          const desire = doc.data();
-          desiresList.innerHTML += `
-            <div class="desire-card">
-              <div class="desire-header">
-                <span class="desire-title">${desire.title}</span>
-                <span class="desire-priority priority-${desire.priority}">${desire.priority}</span>
+        if (querySnapshot.empty) {
+          desiresList.innerHTML = `<div class="empty-state">No desires found. Add one!</div>`;
+        } else {
+          querySnapshot.forEach(docSnap => {
+            const desire = docSnap.data();
+            desiresList.innerHTML += `
+              <div class="desire-card" draggable="true" data-id="${docSnap.id}">
+                <div class="desire-header">
+                  <span class="desire-title">${desire.title}</span>
+                  <span class="desire-priority priority-${desire.priority}">
+                    ${desire.priority}
+                  </span>
+                </div>
+                <div class="desire-description">${desire.description || ''}</div>
+                <div class="desire-footer">
+                  <span class="desire-date">${new Date(desire.date).toLocaleString()}</span>
+                  <button class="delete-btn" data-id="${docSnap.id}">Delete</button>
+                </div>
               </div>
-              <div class="desire-description">${desire.description || ''}</div>
-              <div class="desire-footer">
-                <span class="desire-date">${new Date(desire.date).toLocaleString()}</span>
-              </div>
-            </div>
-          `;
-        });
+            `;
+          });
+        }
+        initDragAndDrop();
+        attachDeleteHandlers();
       } catch (error) {
         console.error('Error fetching desires:', error);
       }
     }
 
-    function showToast(message) {
-      const toast = document.getElementById('toast');
-      toast.textContent = message;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 3000);
+    /*
+      =========================================================
+      ===============     Delete a Desire       ================
+      =========================================================
+    */
+    function attachDeleteHandlers() {
+      const deleteButtons = document.querySelectorAll('.delete-btn');
+      deleteButtons.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          try {
+            await deleteDoc(doc(db, 'desires', id));
+            showToast('Desire deleted.');
+            fetchDesires();
+          } catch (error) {
+            console.error('Error deleting desire:', error);
+          }
+        });
+      });
     }
 
-    onAuthStateChanged(auth, user => {
-      if (user) fetchDesires();
-    });
+    /*
+      =========================================================
+      ===============     Drag and Drop Logic   ================
+      =========================================================
+    */
+    function initDragAndDrop() {
+      const cards = document.querySelectorAll('.desire-card');
+      let draggedCard = null;
+
+      cards.forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+          draggedCard = card;
+          card.classList.add('dragging');
+        });
+
+        card.addEventListener('dragend', () => {
+          draggedCard.classList.remove('dragging');
+          draggedCard = null;
+        });
+
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          if (draggedCard) {
+            const allCards = Array.from(desiresList.querySelectorAll('.desire-card'));
+            const dropIndex = allCards.indexOf(card);
+            desiresList.removeChild(draggedCard);
+            desiresList.insertBefore(draggedCard, dropIndex > -1 ? card : null);
+          }
+        });
+      });
+    }
+
+    /*
+      =========================================================
+      ===============      Auto-Fetch Desires    ==============
+      =========================================================
+    */
+    // Fetch desires on load (you can also wait for auth changes if needed)
+    fetchDesires();
   </script>
 </body>
 </html>
